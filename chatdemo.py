@@ -115,7 +115,6 @@ class AuthLoginHandler(BaseHandler, tornado.auth.GoogleMixin):
             user = yield self.get_authenticated_user()
             self.set_secure_cookie("chatdemo_user",
                                    tornado.escape.json_encode(user))
-            self.set_cookie("first_name", user["first_name"])
             self.redirect("/")
             return
         self.authenticate_redirect(ax_attrs=["name"])
@@ -132,7 +131,7 @@ class MyConnection(tornadio2.SocketConnection):
     key = ''
 
     def on_open(self, request):
-        print 'Client connected -- %s ' % request.cookies['first_name'].value
+        print 'Client connected -- %s ' % self.session
         self.connected_clients.add(self)
         self.key = request.cookies['chatdemo_user'].value
 
@@ -171,6 +170,7 @@ def main():
         socket_io_port=8001,
         )
     
+    print 'Starting socket server'
     socketio_server = tornadio2.SocketServer(app)
 
 
