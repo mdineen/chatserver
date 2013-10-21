@@ -28,7 +28,7 @@ $(document).ready(function() {
     });
     $("#message").select();
 
-    window.socket = io.connect('http://ds1.titanfile.com:8001');
+    window.socket = io.connect();
     socket.on('new_message', function(message) {
         console.log('Receiving new message: ', message);
         updater.showMessage(message);

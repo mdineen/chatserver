@@ -29,6 +29,7 @@ from tornadio2 import event
 
 define("port", default=8888, help="run on the given port", type=int)
 
+USER_SESSION_STORE = {}
 
 class MessageBuffer(object):
     def __init__(self):
@@ -78,6 +79,8 @@ class BaseHandler(tornado.web.RequestHandler):
 class MainHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
+        USER_SESSION_STORE[self.cookies['chatdemo_user'].value] = self.get_current_user()
+
         self.render("index.html", messages=global_message_buffer.cache)
 
 
@@ -126,12 +129,12 @@ class AuthLogoutHandler(BaseHandler):
 
 class MyConnection(tornadio2.SocketConnection):
     connected_clients = set()
-    first_name = ''
+    key = ''
 
     def on_open(self, request):
         print 'Client connected -- %s ' % request.cookies['first_name'].value
         self.connected_clients.add(self)
-        self.first_name = request.cookies['first_name'].value
+        self.key = request.cookies['chatdemo_user'].value
 
     def on_close(self):
         self.connected_clients.remove(self)
@@ -141,7 +144,7 @@ class MyConnection(tornadio2.SocketConnection):
         print 'Sending new_message event:'
         message = {
             "id": str(uuid.uuid4()),
-            "from": self.first_name,
+            "from": USER_SESSION_STORE[self.key]['first_name'],
             "body": kwargs.get("body", ""),
         }
         global_message_buffer.new_messages([message])
@@ -151,7 +154,6 @@ class MyConnection(tornadio2.SocketConnection):
         
 
 def main():
-    parse_command_line()
     socket_router = tornadio2.TornadioRouter(MyConnection)
     app = tornado.web.Application(
         socket_router.urls + [
@@ -168,7 +170,6 @@ def main():
         xsrf_cookies=True,
         socket_io_port=8001,
         )
-    app.listen(options.port)
     
     socketio_server = tornadio2.SocketServer(app)
 
