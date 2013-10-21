@@ -27,14 +27,19 @@ $(document).ready(function() {
         }
     });
     $("#message").select();
-    updater.poll();
+
+    window.socket = io.connect('http://ds1.titanfile.com:8001');
+    socket.on('new_message', function(message) {
+        console.log('Receiving new message: ', message);
+        updater.showMessage(message);
+    });
 });
 
 function newMessage(form) {
     var message = form.formToDict();
     var disabled = form.find("input[type=submit]");
     disabled.disable();
-    $.postJSON("/a/message/new", message, function(response) {
+    socket.emit('new_message', message, function(response) {
         updater.showMessage(response);
         if (message.id) {
             form.parent().remove();
@@ -125,11 +130,13 @@ var updater = {
     },
 
     showMessage: function(message) {
-        var existing = $("#m" + message.id);
-        if (existing.length > 0) return;
-        var node = $(message.html);
-        node.hide();
-        $("#inbox").append(node);
-        node.slideDown();
+        if (message) {
+            var existing = $("#m" + message.id);
+            if (existing.length > 0) return;
+            var node = $('<div class="mesage" id="' + message.id + '"><b>' + message["from"] + ': </b>' + message["body"] + '</div>');
+            node.hide();
+            $("#inbox").append(node);
+            node.slideDown();
+        }
     }
 };

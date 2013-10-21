@@ -19,11 +19,13 @@ import tornado.auth
 import tornado.escape
 import tornado.ioloop
 import tornado.web
+import tornadio2
 import os.path
 import uuid
 
 from tornado import gen
 from tornado.options import define, options, parse_command_line
+from tornadio2 import event
 
 define("port", default=8888, help="run on the given port", type=int)
 
@@ -82,21 +84,7 @@ class MainHandler(BaseHandler):
 class MessageNewHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        message = {
-            "id": str(uuid.uuid4()),
-            "from": self.current_user["first_name"],
-            "body": self.get_argument("body"),
-        }
-        # to_basestring is necessary for Python 3's json encoder,
-        # which doesn't accept byte strings.
-        message["html"] = tornado.escape.to_basestring(
-            self.render_string("message.html", message=message))
-        if self.get_argument("next", None):
-            self.redirect(self.get_argument("next"))
-        else:
-            self.write(message)
-        global_message_buffer.new_messages([message])
-
+        pass
 
 class MessageUpdatesHandler(BaseHandler):
     @tornado.web.authenticated
@@ -124,6 +112,7 @@ class AuthLoginHandler(BaseHandler, tornado.auth.GoogleMixin):
             user = yield self.get_authenticated_user()
             self.set_secure_cookie("chatdemo_user",
                                    tornado.escape.json_encode(user))
+            self.set_cookie("first_name", user["first_name"])
             self.redirect("/")
             return
         self.authenticate_redirect(ax_attrs=["name"])
@@ -135,24 +124,53 @@ class AuthLogoutHandler(BaseHandler):
         self.write("You are now logged out")
 
 
+class MyConnection(tornadio2.SocketConnection):
+    connected_clients = set()
+    first_name = ''
+
+    def on_open(self, request):
+        print 'Client connected -- %s ' % request.cookies['first_name'].value
+        self.connected_clients.add(self)
+        self.first_name = request.cookies['first_name'].value
+
+    def on_close(self):
+        self.connected_clients.remove(self)
+
+    @event('new_message')
+    def on_message(self, **kwargs):
+        print 'Sending new_message event:'
+        message = {
+            "id": str(uuid.uuid4()),
+            "from": self.first_name,
+            "body": kwargs.get("body", ""),
+        }
+        global_message_buffer.new_messages([message])
+        
+        for cc in self.connected_clients:
+            cc.emit('new_message', message)
+        
+
 def main():
     parse_command_line()
+    socket_router = tornadio2.TornadioRouter(MyConnection)
     app = tornado.web.Application(
-        [
+        socket_router.urls + [
             (r"/", MainHandler),
             (r"/auth/login", AuthLoginHandler),
             (r"/auth/logout", AuthLogoutHandler),
-            (r"/a/message/new", MessageNewHandler),
-            (r"/a/message/updates", MessageUpdatesHandler),
+            #(r"/a/message/new", MessageNewHandler),
+            #(r"/a/message/updates", MessageUpdatesHandler),
             ],
         cookie_secret="__TODO:_GENERATE_YOUR_OWN_RANDOM_VALUE_HERE__",
         login_url="/auth/login",
         template_path=os.path.join(os.path.dirname(__file__), "templates"),
         static_path=os.path.join(os.path.dirname(__file__), "static"),
         xsrf_cookies=True,
+        socket_io_port=8001,
         )
     app.listen(options.port)
-    tornado.ioloop.IOLoop.instance().start()
+    
+    socketio_server = tornadio2.SocketServer(app)
 
 
 if __name__ == "__main__":
